@@ -22,6 +22,7 @@ const contextMenu = require('electron-context-menu');
 const Aria2 = require('aria2');
 const forever = require('forever-monitor');
 const {HttpProxyAgent, HttpsProxyAgent} = require('hpagent');
+app.disableHardwareAcceleration()
 
 contextMenu({showCopyImage: false, showCopyImageAddress: false, showInspectElement: false, showServices: false});
 
@@ -36,8 +37,8 @@ let tray = null;
 let AppTitle = 'M3U8-Downloader'
 let firstHide = true;
 
-var configVideos = [];
-let globalCond = {};
+let configVideos = [];
+const globalCond = {};
 const globalConfigDir = app.getPath('userData');
 const globalConfigPath = path.join(globalConfigDir, 'config.json');
 const globalConfigVideoPath = path.join(globalConfigDir, 'config_videos.json');
@@ -163,6 +164,49 @@ function createWindow() {
         shell.openExternal(url);
     });
 }
+//配置系统托盘
+function configTray(){
+    //配置系统托盘
+    let iconImg = nativeImage.createFromPath(path.join(__dirname, 'resource', 'icon', 'logo.png'));
+    tray = new Tray(iconImg.resize({width: 20, height: 20}));
+    tray.setTitle(AppTitle);
+    tray.setToolTip(AppTitle);
+    tray.on("double-click", () => {
+        mainWindow.show();
+    });
+
+    tray.on("double-click", () => {
+        mainWindow.show();
+    });
+    const contextMenu = Menu.buildFromTemplate([
+        {
+            label: '显示窗口',
+            type: 'normal',
+            click: () => {
+                mainWindow.show();
+            }
+        },
+        {
+            type: 'separator'
+        },
+        {
+            label: '退出',
+            type: 'normal',
+            click: () => {
+
+                aria2Server && aria2Server.stop();
+                if (playerWindow) {
+                    playerWindow.close();
+                }
+                mainWindow.close();
+                setTimeout(() => {
+                    app.quit()
+                }, 2000);
+            }
+        }
+    ]);
+    tray.setContextMenu(contextMenu);
+}
 
 function createPlayerWindow(src) {
     if (playerWindow == null) {
@@ -208,75 +252,23 @@ function version2float(v) {
     return 0;
 }
 
-async function checkUpdate() {
-    //const { body } =await got("https://raw.githubusercontent.com/HeiSir2014/M3U8-Downloader/master/package.json").catch(logger.error);
 
-    const {body} = await got("https://tools.heisir.cn/HLSDownload/package.json").catch(logger.error);
-    if (body !== '') {
-        try {
-            let _package = JSON.parse(body);
-            if (version2float(_package.version) > version2float(package_self.version)) {
-                if (dialog.showMessageBoxSync(mainWindow, {type: 'question', buttons: ["Yes", "No"], message: `检测到新版本(${_package.version})，是否要打开升级页面，下载最新版`}) == 0) {
-                    shell.openExternal("https://tools.heisir.cn/HLSDownload/download.html");
-                    return;
-                }
-            }
-        } catch (error) {
-            logger.error(error);
-        }
-    }
-}
 
 app.on('ready', () => {
-
     createWindow();
-    let iconImg = nativeImage.createFromPath(path.join(__dirname, 'resource', 'icon', 'logo.png'));
-    tray = new Tray(iconImg.resize({width: 20, height: 20}));
-    tray.setTitle(AppTitle);
-    tray.setToolTip(AppTitle);
-    tray.on("double-click", () => {
-        mainWindow.show();
-    });
+    configTray();
 
-    tray.on("double-click", () => {
-        mainWindow.show();
-    });
-    const contextMenu = Menu.buildFromTemplate([
-        {
-            label: '显示窗口',
-            type: 'normal',
-            click: () => {
-                mainWindow.show();
-            }
-        },
-        {
-            type: 'separator'
-        },
-        {
-            label: '退出',
-            type: 'normal',
-            click: () => {
-
-                aria2Server && aria2Server.stop();
-                if (playerWindow) {
-                    playerWindow.close();
-                }
-                mainWindow.close();
-                setTimeout(() => {
-                    app.quit()
-                }, 2000);
-            }
-        }
-    ]);
-    tray.setContextMenu(contextMenu);
+    //任务信息
     try {
         configVideos = JSON.parse(fs.readFileSync(globalConfigVideoPath));
     } catch (error) {
         logger.error(error);
     }
 
+    //保存地址
     globalConfigSaveVideoDir = nconf.get('SaveVideoDir');
 
+    //代理配置
     const config_proxy = nconf.get('config_proxy');
     proxy_agent = config_proxy ? {
         http: new HttpProxyAgent({
@@ -297,115 +289,12 @@ app.on('ready', () => {
         })
     } : null;
 
-    //百度统计代码
-    (async () => {
-        try {
-            checkUpdate();
+    // checkUpdateAndCountNum();
 
-            setInterval(checkUpdate, 600000);
+    // syncDownloadSpeed();
 
-            let HMACCOUNT = nconf.get('HMACCOUNT');
-            if (!HMACCOUNT) HMACCOUNT = '';
-            const {headers} = await got("http://hm.baidu.com/hm.js?300991eff395036b1ba22ae155143ff3", {headers: {"Referer": referer, "Cookie": "HMACCOUNT=" + HMACCOUNT}});
-            try {
-                HMACCOUNT = headers['set-cookie'] && headers['set-cookie'][0].match(/HMACCOUNT=(.*?);/i)[1];
-                if (HMACCOUNT) {
-                    nconf.set('HMACCOUNT', HMACCOUNT);
-                    nconf.save();
-                }
-            } catch (error_) {
-                logger.error(error_)
-            }
-            logger.info(HMACCOUNT);
-            await got(`http://hm.baidu.com/hm.gif?hca=${HMACCOUNT}&cc=1&ck=1&cl=24-bit&ds=1920x1080&vl=977&ep=6621%2C1598&et=3&ja=0&ln=zh-cn&lo=0&lt=${(new Date().getTime() / 1000)}&rnd=0&si=300991eff395036b1ba22ae155143ff3&v=1.2.74&lv=3&sn=0&r=0&ww=1920&u=${encodeURIComponent(referer)}`, {
-                headers: {
-                    "Referer": referer,
-                    "Cookie": "HMACCOUNT=" + HMACCOUNT
-                }
-            });
-            await got(`http://hm.baidu.com/hm.gif?cc=1&ck=1&cl=24-bit&ds=1920x1080&vl=977&et=0&ja=0&ln=zh-cn&lo=0&rnd=0&si=300991eff395036b1ba22ae155143ff3&v=1.2.74&lv=1&sn=0&r=0&ww=1920&ct=!!&tt=M3U8Soft-Client`, {
-                headers: {
-                    "Referer": referer,
-                    "Cookie": "HMACCOUNT=" + HMACCOUNT
-                }
-            });
-
-            logger.info("call baidu-tong-ji end.");
-        } catch (error) {
-            logger.error(error)
-        }
-    })();
-    return;
-
-    const EMPTY_STRING = '';
-    const systemConfig = {
-        'all-proxy': EMPTY_STRING,
-        'allow-overwrite': false,
-        'auto-file-renaming': true,
-        'check-certificate': false,
-        'continue': false,
-        'dir': app.getPath('downloads'),
-        'max-concurrent-downloads': 120,
-        'max-connection-per-server': 5,
-        'max-download-limit': 0,
-        'max-overall-download-limit': 0,
-        'max-overall-upload-limit': '256K',
-        'min-split-size': '1M',
-        'no-proxy': EMPTY_STRING,
-        'pause': true,
-        'rpc-listen-port': 16801,
-        'rpc-secret': EMPTY_STRING,
-        'seed-ratio': 1,
-        'seed-time': 60,
-        'split': 10,
-        'user-agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36Transmission/2.94'
-    }
-
-    let cmds = [aria2_app, `--conf-path=${aria2_config}`];
-    cmds = [...cmds, ...transformConfig(systemConfig)];
-    logger.debug(cmds.join(' '));
-
-    let instance = forever.start(cmds, {
-        max: 10,
-        parser: function (command, args) {
-            logger.debug(command, args);
-            return {
-                command: command,
-                args: args
-            }
-        },
-        silent: false
-    });
-    instance.on('start', function (process, data) {
-        let aria2 = new Aria2({port: 16801});
-        aria2.open();
-        aria2.on('close', (e) => {
-            console.log('----aria2 connect close----');
-            setTimeout(() => aria2.open(), 100);
-        });
-        aria2.on("onDownloadComplete", downloadComplete);
-        aria2Client = aria2;
-
-        setInterval(() => {
-            aria2Client.call('getGlobalStat').then((result) => {
-                if (result && result['downloadSpeed']) {
-                    let _speed = '';
-                    const speed = parseInt(result['downloadSpeed']);
-                    _speed = (speed < 1024 * 1024) ? Math.round(speed / 1024) + ' KB/s' : (speed / 1024 / 1024).toFixed(2) + ' MiB/s'
-                    mainWindow.webContents.send('notify-download-speed', _speed);
-                }
-            });
-        }, 1500);
-    });
-    aria2Server = instance;
 });
 
-function downloadComplete(e) {
-    console.log('---- aria2 downloadComplete ----');
-    var gid = e[0]['gid'];
-
-    console.log(gid);
-}
 
 // 当全部窗口关闭时退出。
 app.on('window-all-closed', async () => {
@@ -467,7 +356,7 @@ ipcMain.on('open-log-dir', function (event, arg) {
     showDirInExplorer(path.join(globalConfigDir, 'logs'))
 });
 
-ipcMain.on('task-clear', async function (event, object) {
+ipcMain.on('task-clear',  function (event, object) {
     configVideos.forEach((video) => {
         globalCond[video.id] = false;
     })
@@ -948,10 +837,10 @@ async function startDownload(object, iidx) {
             logger.error(`[${url}] 下载失败，请检查链接有效性`);
             return;
         }
-        let outPathMP4 = path.join(dir, taskName.replace(/["“”，\.。\|\/\\ \*:;\?<>]/g, "") + '.mp4');
-        let outPathMP4_ = path.join(globalConfigSaveVideoDir, taskName.replace(/["“”，\.。\|\/\\ \*:;\?<>]/g, "") + '.mp4');
+        let outPathMP4 = path.join(dir, taskName.replace(/["“”，.。|\/\\ *:;?<>]/g, "") + '.mp4');
+        let outPathMP4_ = path.join(globalConfigSaveVideoDir, taskName.replace(/["“”，.。|\/\\ *:;?<>]/g, "") + '.mp4');
         if (fs.existsSync(ffmpegPath)) {
-            let ffmpegInputStream = new FFmpegStreamReadable(null);
+            const ffmpegInputStream = new FFmpegStreamReadable(null);
             new ffmpeg(ffmpegInputStream)
                 .setFfmpegPath(ffmpegPath)
                 .videoCodec('copy')
@@ -985,10 +874,10 @@ async function startDownload(object, iidx) {
                 });
 
             for (let i = 0; i < fileSegments.length; i++) {
-                let percent = Number.parseInt((i + 1) * 100 / fileSegments.length);
+                const percent = Math.floor((i + 1) * 100 / fileSegments.length);
                 video.status = `合并中[${percent}%]`;
                 mainWindow.webContents.send('task-notify-end', video);
-                let filePath = fileSegments[i];
+                const filePath = fileSegments[i];
                 fs.existsSync(filePath) && ffmpegInputStream.push(fs.readFileSync(filePath));
                 while (ffmpegInputStream._readableState.length > 0) {
                     await sleep(100);
@@ -1014,8 +903,7 @@ class FFmpegStreamReadable extends Readable {
         super(opt);
     }
 
-    _read() {
-    }
+    _read() {}
 }
 
 async function startDownloadLive(object) {
@@ -1039,7 +927,7 @@ async function startDownloadLive(object) {
 
     let count_downloaded = 0;
     let count_seg = 100;
-    var video = {
+    const video = {
         id: id,
         url: url,
         dir: dir,
@@ -1067,10 +955,9 @@ async function startDownloadLive(object) {
     let ffmpegObj = null;
     globalCond[id] = true;
     while (globalCond[id]) {
-
         try {
             const response = await got(url, {headers: headers, timeout: httpTimeout, agent: proxy_agent}).catch(logger.error);
-            if (response == null || response.body == null || response.body == '') {
+            if (response == null || response.body == null || response.body === '') {
                 break;
             }
             let parser = new Parser();
@@ -1204,7 +1091,7 @@ async function startDownloadLive(object) {
         video.videopath = '';
         video.status = "已完成，下载失败"
         mainWindow.webContents.send('task-notify-end', video);
-        return;
+
     }
 }
 
@@ -1213,19 +1100,19 @@ function formatTime(duration) {
     let sec = Math.floor(duration % 60).toLocaleString();
     let min = Math.floor(duration / 60 % 60).toLocaleString();
     let hour = Math.floor(duration / 3600 % 60).toLocaleString();
-    if (sec.length != 2) sec = '0' + sec;
-    if (min.length != 2) min = '0' + min;
-    if (hour.length != 2) hour = '0' + hour;
+    if (sec.length !== 2) sec = '0' + sec;
+    if (min.length !== 2) min = '0' + min;
+    if (hour.length !== 2) hour = '0' + hour;
     return hour + ":" + min + ":" + sec;
 }
 
 
 ipcMain.on('delvideo', function (event, id) {
     configVideos.forEach(Element => {
-        if (Element.id == id) {
+        if (Element.id === id) {
             try {
                 if (false && fs.existsSync(Element.dir)) {
-                    var files = fs.readdirSync(Element.dir)
+                    const files = fs.readdirSync(Element.dir);
                     files.forEach(e => {
                         //fs.unlinkSync(path.join(Element.dir,e));
                         shell.moveItemToTrash(path.join(Element.dir, e))
@@ -1233,7 +1120,7 @@ ipcMain.on('delvideo', function (event, id) {
                     //fs.rmdirSync(Element.dir,{recursive :true})
                     shell.moveItemToTrash(Element.dir)
                 }
-                var nIdx = configVideos.indexOf(Element);
+                const nIdx = configVideos.indexOf(Element);
                 if (nIdx > -1) {
                     configVideos.splice(nIdx, 1);
                     fs.writeFileSync(globalConfigVideoPath, JSON.stringify(configVideos));
@@ -1267,22 +1154,21 @@ ipcMain.on('playvideo', function (event, arg) {
     createPlayerWindow(arg);
 });
 
-ipcMain.on('StartOrStop', function (event, arg) {
+ipcMain.on('StartOrStop', async function (event, arg) {
     logger.info(arg);
-
-    let id = Number.parseInt(arg);
+    const id = Number.parseInt(arg);
     if (globalCond[id] == null) {
         logger.info("不存在此任务")
         return;
     }
-    globalCond[id] = !globalCond[id];
-    if (globalCond[id] == true) {
-        configVideos.forEach(Element => {
-            if (Element.id == id) {
-                if (Element.isLiving == true) {
-                    startDownloadLive(Element);
-                } else {
-                    startDownload(Element);
+    globalCond[id] = !globalCond[id];//开始下载或暂停下载
+    if (globalCond[id] === true) {
+        configVideos.forEach(video => {
+            if (video.id === id) {
+                if (video.isLiving === true) {//直播类型
+                    startDownloadLive(video);
+                } else {//视频类型
+                    startDownload(video);
                 }
             }
         });
@@ -1305,7 +1191,7 @@ ipcMain.on('set-config', function (event, data) {
     nconf.set(data.key, data.value);
     nconf.save();
 
-    if (data.key == 'config_proxy') {
+    if (data.key === 'config_proxy') {
         const config_proxy = nconf.get('config_proxy');
         proxy_agent = config_proxy ? {
             http: new HttpProxyAgent({
@@ -1336,7 +1222,7 @@ ipcMain.on('open-config-dir', function (event, arg) {
         defaultPath: SaveDir ? SaveDir : '',
         properties: ['openDirectory', 'createDirectory'],
     }).then(result => {
-        if (!result.canceled && result.filePaths.length == 1) {
+        if (!result.canceled && result.filePaths.length === 1) {
             logger.debug(`选择目录 ${result.filePaths}`);
             globalConfigSaveVideoDir = result.filePaths[0];
             nconf.set('SaveVideoDir', globalConfigSaveVideoDir);
@@ -1353,7 +1239,7 @@ ipcMain.on('open-select-m3u8', function (event, arg) {
         title: "请选择一个M3U8文件",
         properties: ['openFile'],
     }).then(result => {
-        if (!result.canceled && result.filePaths.length == 1) {
+        if (!result.canceled && result.filePaths.length === 1) {
             event.sender.send("open-select-m3u8-reply", `file:///${result.filePaths[0]}`);
         }
     }).catch(err => {
@@ -1361,6 +1247,7 @@ ipcMain.on('open-select-m3u8', function (event, arg) {
     });
 });
 
+//手动选择ts文件夹
 ipcMain.on('open-select-ts-dir', function (event, arg) {
     if (arg) {
         let files = [];
@@ -1422,50 +1309,54 @@ ipcMain.on('open-select-ts-dir', function (event, arg) {
     });
 });
 
+
+//根据选定定ts文件夹合并
 ipcMain.on('start-merge-ts', async function (event, task) {
     if (!task) return
-    let name = task.name ? task.name : (new Date().getTime() + '');
+    const name = task.name ? task.name : (new Date().getTime() + '');
 
-    let dir = path.join(globalConfigSaveVideoDir, name);
+    const dir = path.join(globalConfigSaveVideoDir, name);
     if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, {recursive: true});
     }
-    let outPathMP4 = path.join(dir, `${new Date().getTime()}.mp4`);
+    const outPathMP4 = path.join(dir, `${new Date().getTime()}.mp4`);
+
 
     if (fs.existsSync(ffmpegPath)) {
         mainWindow.webContents.send('start-merge-ts-status', {code: 0, progress: 1, status: '开始合并...'});
-        ffmpegInputStream = new FFmpegStreamReadable(null);
+        const ffmpegInputStream = new FFmpegStreamReadable(null);
 
-        let ffmpegObj = new ffmpeg(ffmpegInputStream)
+        const ffmpegObj = new ffmpeg(ffmpegInputStream)
             .setFfmpegPath(ffmpegPath)
-            .videoCodec(task.mergeType == 'speed' ? 'copy' : 'libx264')
-            .audioCodec(task.mergeType == 'speed' ? 'copy' : 'aac')
-            .format('mp4')
-            .save(outPathMP4)
+            .videoCodec(task.mergeType === 'speed' ? 'copy' : 'libx264')
+            .audioCodec(task.mergeType === 'speed' ? 'copy' : 'aac')
+            .on('progress', (info) => {
+                logger.info(JSON.stringify(info));
+                mainWindow.webContents.send('start-merge-ts-status', {code: 0, progress: -1, status: JSON.stringify(info)});
+            })
+
+            .on('end', () => {
+                logger.info(`${outPathMP4} merge finished.`)
+                mainWindow.webContents.send('start-merge-ts-status', {code: 1, progress: 100, status: 'success', dir: dir, path: outPathMP4});
+            })
             .on('error', (error) => {
                 logger.error(error)
                 mainWindow.webContents.send('start-merge-ts-status', {code: -2, progress: 100, status: '合并出错|' + error});
             })
-            .on('end', function () {
-                logger.info(`${outPathMP4} merge finished.`)
-                mainWindow.webContents.send('start-merge-ts-status', {code: 1, progress: 100, status: 'success', dir: dir, path: outPathMP4});
-            })
-            .on('progress', (info) => {
-                logger.info(JSON.stringify(info));
-                mainWindow.webContents.send('start-merge-ts-status', {code: 0, progress: -1, status: JSON.stringify(info)});
-            });
-        let count = task.ts_files.length
-        let _last = '';
+            .outputFormat('mp4')
+            .save(outPathMP4);
+
+        const count = task.ts_files.length
         for (let index = 0; index < count; index++) {
             const file = task.ts_files[index];
             ffmpegInputStream.push(fs.readFileSync(file));
-            while (ffmpegInputStream._readableState.length > 0) {
+            while (ffmpegInputStream._readableState.length > 0) {//等待合并过程
                 await sleep(200);
             }
-            let precent = Number.parseInt((index + 1) * 100 / count);
-            mainWindow.webContents.send('start-merge-ts-status', {code: 0, progress: precent, status: `合并中...[${precent}%]`});
+            const percent = Math.floor((index + 1) * 100 / count);//向下取整,计算出下载百分比
+            mainWindow.webContents.send('start-merge-ts-status', {code: 0, progress: percent, status: `合并中...[${percent}%]`});
         }
-        ffmpegInputStream.push(null);
+        ffmpegInputStream.push(null);//结束输入流,触发pipe的关闭
     } else {
         mainWindow.webContents.send('start-merge-ts-status', {code: -1, progress: 100, status: '未检测到FFMPEG,不进行合并操作。'});
     }
@@ -1474,3 +1365,136 @@ ipcMain.on('start-merge-ts', async function (event, task) {
 ipcMain.on("new-hook-url-window", function () {
 
 });
+
+
+
+
+
+//检查更新,并提交到百度统计中
+async function checkUpdateAndCountNum() {
+    async function checkUpdate() {
+        //const { body } =await got("https://raw.githubusercontent.com/HeiSir2014/M3U8-Downloader/master/package.json").catch(logger.error);
+        const {body} = await got("https://tools.heisir.cn/HLSDownload/package.json").catch(logger.error);
+        if (body !== '') {
+            try {
+                let _package = JSON.parse(body);
+                if (version2float(_package.version) > version2float(package_self.version)) {
+                    if (dialog.showMessageBoxSync(mainWindow, {type: 'question', buttons: ["Yes", "No"], message: `检测到新版本(${_package.version})，是否要打开升级页面，下载最新版`}) == 0) {
+                        shell.openExternal("https://tools.heisir.cn/HLSDownload/download.html");
+                        return;
+                    }
+                }
+            } catch (error) {
+                logger.error(error);
+            }
+        }
+    }
+
+    try {
+        checkUpdate();
+
+        setInterval(checkUpdate, 600000);
+
+        let HMACCOUNT = nconf.get('HMACCOUNT');
+        if (!HMACCOUNT) HMACCOUNT = '';
+        const {headers} = await got("http://hm.baidu.com/hm.js?300991eff395036b1ba22ae155143ff3", {headers: {"Referer": referer, "Cookie": "HMACCOUNT=" + HMACCOUNT}});
+        try {
+            HMACCOUNT = headers['set-cookie'] && headers['set-cookie'][0].match(/HMACCOUNT=(.*?);/i)[1];
+            if (HMACCOUNT) {
+                nconf.set('HMACCOUNT', HMACCOUNT);
+                nconf.save();
+            }
+        } catch (error_) {
+            logger.error(error_)
+        }
+        logger.info(HMACCOUNT);
+        await got(`http://hm.baidu.com/hm.gif?hca=${HMACCOUNT}&cc=1&ck=1&cl=24-bit&ds=1920x1080&vl=977&ep=6621%2C1598&et=3&ja=0&ln=zh-cn&lo=0&lt=${(new Date().getTime() / 1000)}&rnd=0&si=300991eff395036b1ba22ae155143ff3&v=1.2.74&lv=3&sn=0&r=0&ww=1920&u=${encodeURIComponent(referer)}`, {
+            headers: {
+                "Referer": referer,
+                "Cookie": "HMACCOUNT=" + HMACCOUNT
+            }
+        });
+        await got(`http://hm.baidu.com/hm.gif?cc=1&ck=1&cl=24-bit&ds=1920x1080&vl=977&et=0&ja=0&ln=zh-cn&lo=0&rnd=0&si=300991eff395036b1ba22ae155143ff3&v=1.2.74&lv=1&sn=0&r=0&ww=1920&ct=!!&tt=M3U8Soft-Client`, {
+            headers: {
+                "Referer": referer,
+                "Cookie": "HMACCOUNT=" + HMACCOUNT
+            }
+        });
+
+        logger.info("call baidu-tong-ji end.");
+    } catch (error) {
+        logger.error(error)
+    }
+}
+
+//同步生成下载速度
+async function syncDownloadSpeed(){
+
+    //监测downloads文件夹的大小,计算出当前的下载速度
+    const EMPTY_STRING = '';
+    const systemConfig = {
+        'all-proxy': EMPTY_STRING,
+        'allow-overwrite': false,
+        'auto-file-renaming': true,
+        'check-certificate': false,
+        'continue': false,
+        'dir': app.getPath('downloads'),
+        'max-concurrent-downloads': 120,
+        'max-connection-per-server': 5,
+        'max-download-limit': 0,
+        'max-overall-download-limit': 0,
+        'max-overall-upload-limit': '256K',
+        'min-split-size': '1M',
+        'no-proxy': EMPTY_STRING,
+        'pause': true,
+        'rpc-listen-port': 16801,
+        'rpc-secret': EMPTY_STRING,
+        'seed-ratio': 1,
+        'seed-time': 60,
+        'split': 10,
+        'user-agent': 'Mozilla/5.0 (Windows NT 6.1; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/83.0.4103.61 Safari/537.36Transmission/2.94'
+    }
+
+    let cmds = [aria2_app, `--conf-path=${aria2_config}`];
+    cmds = [...cmds, ...transformConfig(systemConfig)];
+    logger.debug(cmds.join(' '));
+
+    let instance = forever.start(cmds, {
+        max: 10,
+        parser: function (command, args) {
+            logger.debug(command, args);
+            return {
+                command: command,
+                args: args
+            }
+        },
+        silent: false
+    });
+    instance.on('start', function (process, data) {
+        let aria2 = new Aria2({port: 16801});
+        aria2.open();
+        aria2.on('close', (e) => {
+            console.log('----aria2 connect close----');
+            setTimeout(() => aria2.open(), 100);
+        });
+        aria2.on("onDownloadComplete", (e)=>{
+            console.log('---- aria2 downloadComplete ----');
+            const gid = e[0]['gid'];
+            console.log(gid);
+        });
+        aria2Client = aria2;
+
+        setInterval(() => {
+            aria2Client.call('getGlobalStat').then((result) => {
+                if (result && result['downloadSpeed']) {
+                    let _speed = '';
+                    const speed = parseInt(result['downloadSpeed']);
+                    _speed = (speed < 1024 * 1024) ? Math.round(speed / 1024) + ' KB/s' : (speed / 1024 / 1024).toFixed(2) + ' MiB/s'
+                    mainWindow.webContents.send('notify-download-speed', _speed);
+                }
+            });
+        }, 1500);
+    });
+    aria2Server = instance;
+}
+
